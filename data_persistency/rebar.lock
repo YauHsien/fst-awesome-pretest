@@ -1,0 +1,12 @@
+[{<<"epgsql">>,
+  {git,"git@github.com:epgsql/epgsql.git",
+       {ref,"b9d745ecc7f001dc5200cc2ab72dbd462432f370"}},
+  0},
+ {<<"poolboy">>,
+  {git,"git@github.com:devinus/poolboy.git",
+       {ref,"29be47db8c2be38b18c908e43a80ebb7b9b6116b"}},
+  0},
+ {<<"rebar">>,
+  {git,"git@github.com:epgsql/epgsql.git",
+       {ref,"b9d745ecc7f001dc5200cc2ab72dbd462432f370"}},
+  0}].

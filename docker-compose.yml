@@ -1,0 +1,76 @@
+version: "3.3"
+services:
+  web_api:
+    image: fst-awesome-pretest/web_api
+    build:
+      context: .
+      dockerfile: web_api.dockerfile
+    ports:
+      - "8008:4000"
+    container_name: w.p
+    command: elixir --no-halt --erl "-noshell" --cookie magic --name webapi@w.p -S mix phx.server
+    volumes:
+      - ./web_api/lib:/parrent/app/lib
+      - ./web_api/test:/parrent/app/test
+      - ./web_api/config:/parrent/app/config
+    environment:
+      - NODE_USERS=users@u.p
+      - NODE_TRADES=trades@t.p
+    depends_on:
+      - users
+      - trades
+  users:
+    image: fst-awesome-pretest/users
+    build:
+      context: .
+      dockerfile: users.dockerfile
+    container_name: u.p
+    command: erl -noshell -heart -async_shell_start -name users@u.p -setcookie magic -pz /parrent/app/_build/default/lib/users/ebin -eval "application:start(users)"
+    volumes:
+      - ./users/src:/parrent/app/src
+      - ./users/test:/parrent/app/test
+    environment:
+      - NODE_DATA_PERSISTENCY=data_persistency@d.p
+      - NODE_TRADES=trades@t.p
+    depends_on:
+      - orders
+      - data_persistency
+  trades:
+    image: fst-awesome-pretest/trades
+    build:
+      context: .
+      dockerfile: trades.dockerfile
+    container_name: t.p
+    command: erl -noshell -heart -async_shell_start -name trades@t.p -setcookie magic -pz /parrent/app/_build/default/lib/trades/ebin -eval "application:start(trades)"
+    environment:
+      - NODE_DATA_PERSISTENCY=data_persistency@d.p
+    depends_on:
+      - data_persistency
+  data_persistency:
+    image: fst-awesome-pretest/data_persistency
+    build:
+      context: .
+      dockerfile: data_persistency.dockerfile
+    container_name: d.p
+    command: erl -noshell -heart -async_shell_start -name data_persistency@d.p -setcookie magic -pz /parrent/app/_build/default/lib/data_persistency/ebin -pz /parrent/app/_build/default/lib/poolboy/ebin -pz /parrent/app/_build/default/lib/rebar/ebin -pz /parrent/app/_build/default/lib/epgsql/ebin -eval "application:start(data_persistency)"
+    environment:
+      - DATABASE=pretest
+      - DB_USER=pretestuser
+      - DB_PASS=123@123@123
+      - DB_PORT=5432
+      - DB_HOST=db.db.db
+      - POOLSIZE=90
+    depends_on:
+      - db
+  db:
+    image: fst-awesome-pertest/db
+    build:
+      context: .
+      dockerfile: db.dockerfile
+    container_name: db.db.db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=123@123@123
+      - POSTGRES_DB=postgres
+    ports:
+      - "8005:5432"

@@ -1,0 +1,15 @@
+{application, data_persistency,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {data_persistency_app, []}},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {modules, []},
+  {licenses, ["Apache 2.0"]},
+  {links, []},
+  {env, []}
+ ]
+}.
