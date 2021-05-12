@@ -26,10 +26,22 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
+    OrchestratorName = orchestrator:registered_name(),
+    OrchestratorSpec =
+        #{ id => OrchestratorName,
+           start => { gen_server,
+                      start_link,
+                      [{global,OrchestratorName}, orchestrator, [], []]},
+           restart => permanent,
+           shutdown => 50000,
+           type => worker,
+           modules => [gen_server]
+         },
+
     SupFlags = #{strategy => one_for_all,
                  intensity => 0,
                  period => 1},
-    ChildSpecs = [],
+    ChildSpecs = [OrchestratorSpec],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions
