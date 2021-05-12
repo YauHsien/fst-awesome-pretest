@@ -39,7 +39,7 @@ init(_args) ->
                              float_to_list(Amount)
                            ]),
               {ok, Pid} =
-                  gen_server:start({local,Id}, incomplete_orders, [Amount], []),
+                  gen_server:start({local,Id}, incomplete_orders, [OrderType,CardType,Amount], []),
               ets:insert(
                 case OrderType of ?Buy -> BuyTb; ?Sell -> SellTb end,
                 { 0, CardType, Amount, Pid })
@@ -50,42 +50,41 @@ init(_args) ->
 % Pricing strategy:
 % For the incoming sell order, match the incomplete buy order with highest possible amount;
 % for the incoming buy order, match one with lowest possible amount.
-handle_call(
-  {match,order,?Buy,OwTS,OwSeq,OrTS,OrSeq,CTp,Amt,?USD}, _from, #state{ sell= SellTb }=State
- ) ->
+%
+% Pratical approach:
+% Get a specific matcher then progress.
+handle_call({match,order,OrderType,OwTS,OwSeq,OrTS,OrSeq,CTp,Amt,?USD},
+            _from,
+            #state{ sell= SellTb, buy= BuyTb }=State)
+  when (OrderType == ?Buy orelse OrderType == ?Sell) ->
+    TrackTable =
+        case OrderType of ?Buy -> SellTb; ?Sell -> BuyTb end,
     IncompleteOrdersPidList =
-        find_incomplete_orders_pids(SellTb, ?Buy, CTp, Amt),
-    MatcherInfo =
-        gen_server:start(
-          {local,build_id([ integer_to_list(OwTS), integer_to_list(OwSeq),
-                            integer_to_list(OrTS), integer_to_list(OrSeq)
-                          ])},
-          matcher,
-          [ {order,OwTS,OwSeq,OrTS,OrSeq,Amt,?USD},
-            IncompleteOrdersPidList
-          ],
-          []),
-    {reply, MatcherInfo, State};
-
-handle_call(
-  {match,order,?Sell,OwTS,OwSeq,OrTS,OrSeq,CTp,Amt,?USD}, _from, #state{ buy= BuyTb }=State
- ) ->
-    IncompleteOrdersPidList =
-        find_incomplete_orders_pids(BuyTb, ?Sell, CTp, Amt),
-    MatcherInfo =
-        gen_server:start(
-          {local,build_id([ integer_to_list(OwTS), integer_to_list(OwSeq),
-                            integer_to_list(OrTS), integer_to_list(OrSeq)
-                          ])},
-          matcher,
-          [ {order,OwTS,OwSeq,OrTS,OrSeq,Amt,?USD},
-            IncompleteOrdersPidList
-          ],
-          []),
-    {reply, MatcherInfo, State};
-
-handle_call(_request, _from, #state{ sell= SellTb, buy= BuyTb }=State) ->
-    {reply, {SellTb,BuyTb}, State}.
+        find_incomplete_orders_pids(TrackTable, OrderType, CTp, Amt),
+    case IncompleteOrdersPidList of
+        [] ->
+            hibernate(TrackTable, {order,OwTS,OwSeq,OrTS,OrSeq,CTp,Amt,?USD}),
+            {reply, nomatch, State};
+        _ ->
+            MatcherInfo =
+                gen_server:start(
+                  {local,build_id([ integer_to_list(OwTS), integer_to_list(OwSeq),
+                                    integer_to_list(OrTS), integer_to_list(OrSeq)
+                                  ])},
+                  matcher,
+                  [IncompleteOrdersPidList],
+                  []),
+            {reply, MatcherInfo, State}
+    end;
+handle_call({state, empty, OrderType, CardType, Amount},
+            _from,
+            #state{ sell= SellTb, buy= BuyTb }=State) ->
+    TrackTable =
+        case OrderType of ?Sell -> SellTb; ?Buy -> BuyTb end,
+    switch_to_empty_status(TrackTable, CardType, Amount),
+    {reply, ok, State};
+handle_call(_request, _from, State) ->
+    {reply, ok, State}.
 
 handle_cast(_msg, State) ->
     {noreply, State}.
@@ -136,9 +135,19 @@ find_incomplete_orders_pids(EtsTable, OrderType, CardType, Amount) ->
     lists:map(
       fun(A) ->
               [[Pid]] = ets:select(EtsTable, [{{1,CardType,A,'$1'},[],['$$']}]),
-              Pid
+              {A, Pid}
       end,
       AmountList1).
+
+hibernate(EtsTable, {order,OwTS,OwSeq,OrTS,OrSeq,CTp,Amt,?USD}) ->
+    case ets:select(EtsTable,[{{0,CTp,Amt,'$1'},[],['$_']}]) of
+        [{ 0, _card_type, _amount, Pid }=Item|_] ->
+            gen_server:call(Pid, {rest,order,OwTS,OwSeq,OrTS,OrSeq}),
+            switch_to_nonempty_status(EtsTable, CTp, Amt),
+            ok;
+        _ ->
+            ok
+    end.
 
 switch_to_nonempty_status(EtsTable, CardType, Amount) ->
     case ets:select(EtsTable,[{{0,CardType,Amount,'$1'},[],['$_']}]) of
